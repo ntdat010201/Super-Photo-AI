@@ -1,6 +1,7 @@
 package com.example.superphoto.ui.fragment
 
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -15,6 +16,7 @@ import com.example.superphoto.adapter.TemplateCategoryAdapter
 import com.example.superphoto.model.PhotoCard
 import com.example.superphoto.model.TemplateCategory
 import com.example.superphoto.ui.activities.TemplateVideoActivity
+import com.example.superphoto.utils.BottomSpaceItemDecoration
 
 class TemplatesFragment : Fragment() {
 
@@ -117,6 +119,9 @@ class TemplatesFragment : Fragment() {
             adapter = photoCardAdapter
             setHasFixedSize(true)   // cải thiện hiệu năng
             itemAnimator = null     // tắt animation thừa để cuộn mượt
+            
+            // Thêm ItemDecoration để tạo spacing bottom cho item cuối
+            addItemDecoration(BottomSpaceItemDecoration(300))
         }
     }
 

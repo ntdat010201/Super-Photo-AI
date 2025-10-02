@@ -1,17 +1,20 @@
 package com.example.superphoto.ui.fragment
 
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.superphoto.R
 import com.example.superphoto.adapter.ToolsAdapter
 import com.example.superphoto.databinding.FragmentToolsBinding
 import com.example.superphoto.model.PhotoCard
 import com.example.superphoto.ui.activities.TemplateVideoActivity
+import com.example.superphoto.utils.BottomSpaceItemDecoration
 
 class ToolsFragment : Fragment() {
     private lateinit var binding: FragmentToolsBinding
@@ -52,6 +55,9 @@ class ToolsFragment : Fragment() {
             // Thêm các tối ưu hóa bổ sung
             setItemViewCacheSize(20)  // Tăng cache size
             // Loại bỏ deprecated drawing cache methods
+            
+            // Thêm ItemDecoration để tạo spacing bottom cho item cuối
+            addItemDecoration(BottomSpaceItemDecoration(300))
         }
     }
 
