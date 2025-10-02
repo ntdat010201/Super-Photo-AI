@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="25dp"
+    android:height="25dp"
+    android:viewportWidth="25"
+    android:viewportHeight="25">
+
+    <!-- Vòng tròn bên ngoài -->
+    <path
+        android:pathData="M12.5,1 A11.5,11.5 0 1,1 12.5,24 A11.5,11.5 0 1,1 12.5,1"
+        android:strokeColor="#FF9CA3AF"
+        android:strokeWidth="1.2"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Icon ở giữa -->
+    <path
+        android:strokeColor="#FF9CA3AF"
+        android:strokeWidth="1.21"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="@android:color/transparent"
+        android:pathData="M14.4 8.75l-3.74 0.93c-0.54 0.14-1.1 0.7-1.23 1.24L8.5 14.64c-0.28 1.13 0.4 1.82 1.54 1.54l3.72-0.93c0.54-0.13 1.1-0.69 1.24-1.23l0.93-3.73c0.28-1.13-0.41-1.82-1.54-1.54Z"/>
+</vector>

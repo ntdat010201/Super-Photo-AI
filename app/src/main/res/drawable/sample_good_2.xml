@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- Background -->
+    <path
+        android:fillColor="#E8F5E8"
+        android:pathData="M0,0h120v120H0z"/>
+    
+    <!-- Face circle -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M60,25 A25,25 0 1,1 60,75 A25,25 0 1,1 60,25"/>
+    
+    <!-- Hair -->
+    <path
+        android:fillColor="#8BC34A"
+        android:pathData="M40,30 Q60,15 80,30 Q75,25 60,25 Q45,25 40,30"/>
+    
+    <!-- Eyes -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,45 A3,3 0 1,1 52,51 A3,3 0 1,1 52,45"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,45 A3,3 0 1,1 68,51 A3,3 0 1,1 68,45"/>
+    
+    <!-- Smile -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2"
+        android:pathData="M52,58 Q60,65 68,58"/>
+    
+    <!-- High resolution indicator -->
+    <path
+        android:fillColor="#2196F3"
+        android:pathData="M20,90 h80 v10 h-80 z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M25,92 h5 v6 h-5 z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35,92 h5 v6 h-5 z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,92 h5 v6 h-5 z"/>
+    
+</vector>

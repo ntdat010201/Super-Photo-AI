@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    
+    <!-- Background -->
+    <path
+        android:fillColor="#FFE8E8"
+        android:pathData="M0,0h120v120H0z"/>
+    
+    <!-- Cropped face (only partial) -->
+    <path
+        android:fillColor="#F44336"
+        android:pathData="M60,60 A30,30 0 0,1 90,90 L90,120 L30,120 L30,90 A30,30 0 0,1 60,60"/>
+    
+    <!-- Partial eyes -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,75 A2,2 0 1,1 45,79 A2,2 0 1,1 45,75"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M75,75 A2,2 0 1,1 75,79 A2,2 0 1,1 75,75"/>
+    
+    <!-- Crop lines -->
+    <path
+        android:strokeColor="#FF5722"
+        android:strokeWidth="3"
+        android:pathData="M0,60 L120,60"/>
+    
+    <!-- Cropped indicator -->
+    <path
+        android:fillColor="#FF5722"
+        android:pathData="M20,20 h15 v8 h-15 z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M22,22 h11 v4 h-11 z"/>
+    
+</vector>

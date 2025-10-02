@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Original Colors -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="red">#FF3320</color>
+    <color name="green">#37C608</color>
+    <color name="gray_hint">#989898</color>
+    <color name="grey">#9F9F9F</color>
+    <color name="yellow">#FCD631</color>
+    <color name="blue">#0039A3</color>
+    <color name="background_item">#EFF9FF</color>
+    
+    <!-- Dark theme colors matching AI Generator app exactly -->
+    <color name="background_dark">#0F1419</color>
+    <color name="surface_dark">#1A1F2E</color>
+    <color name="primary_dark">#0F1419</color>
+    <color name="accent_purple">#8B5CF6</color>
+    <color name="accent_blue">#3B82F6</color>
+    <color name="accent_orange">#FF6B35</color>
+    <color name="accent_green">#10B981</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#9CA3AF</color>
+    <color name="text_hint">#6B7280</color>
+    <color name="card_background">#1F2937</color>
+    <color name="search_background">#374151</color>
+    <color name="bottom_nav_selected">#8B5CF6</color>
+    <color name="bottom_nav_unselected">#6B7280</color>
+    <color name="bottom_nav_background">#0F1419</color>
+    <color name="trending_badge">#F59E0B</color>
+    <color name="popular_badge">#EF4444</color>
+    <color name="hot_badge">#F97316</color>
+    
+    <!-- Badge colors with correct names -->
+    <color name="badge_trending">#F59E0B</color>
+    <color name="badge_popular">#EF4444</color>
+    <color name="badge_hot">#F97316</color>
+    <color name="bottom_nav_icon">#6B7280</color>
+    
+    <!-- Gradient Colors -->
+    <color name="gradient_start">#6366F1</color>
+    <color name="gradient_end">#8B5CF6</color>
+    
+    <!-- Missing background color -->
+    <color name="background">#0F1419</color>
+    
+    <!-- AI Generator specific colors -->
+    <color name="ai_background_primary">#1A1A2E</color>
+    <color name="ai_background_secondary">#2A1B3D</color>
+    <color name="ai_surface">#16213E</color>
+    <color name="ai_card_background">#1E293B</color>
+    <color name="ai_border">#334155</color>
+    <color name="ai_border_dashed">#475569</color>
+    <color name="ai_text_primary">#FFFFFF</color>
+    <color name="ai_text_secondary">#94A3B8</color>
+    <color name="ai_text_hint">#64748B</color>
+    <color name="ai_accent_purple">#8B5CF6</color>
+    <color name="ai_accent_orange">#F97316</color>
+    <color name="ai_tab_selected">#8B5CF6</color>
+    <color name="ai_tab_unselected">#64748B</color>
+    <color name="ai_upload_background">#0F172A</color>
+    <color name="ai_upload_border">#475569</color>
+    <color name="ai_button_gradient_start">#8B5CF6</color>
+    <color name="ai_button_gradient_end">#F97316</color>
+    <color name="ai_accent">#8B5CF6</color>
+    
+    <!-- Missing colors for ripple effects -->
+    <color name="ai_input_background">#1E293B</color>
+    <color name="ai_tab_background">#16213E</color>
+    <color name="ai_text_tertiary">#475569</color>
+    
+    <!-- Primary and Secondary colors -->
+    <color name="primary">#8B5CF6</color>
+    <color name="secondary">#10B981</color>
+    <color name="border_light">#E5E7EB</color>
+    
+    <!-- Missing surface color -->
+    <color name="surface">#1A1F2E</color>
+    
+    <!-- Additional missing colors for Celebrity Photo feature -->
+    <color name="background_color">#0F1419</color>
+    <color name="surface_color">#1A1F2E</color>
+    <color name="primary_color">#8B5CF6</color>
+    <color name="error_color">#EF4444</color>
+    
+    <!-- AI Transformation specific colors -->
+    <color name="background_primary">#0F1419</color>
+    <color name="surface_primary">#1A1F2E</color>
+    <color name="surface_secondary">#1F2937</color>
+    <color name="accent_primary">#8B5CF6</color>
+    
+    <!-- Missing colors for enhanced loading component -->
+    <color name="text_tertiary">#6B7280</color>
+    <color name="accent_secondary">#10B981</color>
+    <color name="success_color">#10B981</color>
+    
+    <!-- Ripple effect colors -->
+    <color name="ripple_light">#20FFFFFF</color>
+    
+    <!-- Purple accent for settings -->
+    <color name="purple_accent">#8B5CF6</color>
+</resources>
