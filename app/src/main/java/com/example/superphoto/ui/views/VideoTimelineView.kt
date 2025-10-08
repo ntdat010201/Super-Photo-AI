@@ -1,5 +1,6 @@
 package com.example.superphoto.ui.views
 
+import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
@@ -13,7 +14,6 @@ import android.view.animation.DecelerateInterpolator
 import androidx.core.content.ContextCompat
 import com.example.superphoto.R
 import kotlinx.coroutines.*
-import kotlinx.coroutines.Dispatchers
 import kotlin.math.*
 
 class VideoTimelineView @JvmOverloads constructor(
@@ -100,13 +100,13 @@ class VideoTimelineView @JvmOverloads constructor(
         videoUri = uri
         thumbnailCache.clear()
         extractVideoInfo()
-        preloadAllZoomLevels() // Preload async
+        preloadInitialZoomLevel() // Preload zoom level 1x first
         invalidate()
     }
 
     fun setVideoDuration(duration: Long) {
         this.videoDuration = duration
-        preloadAllZoomLevels() // Preload again if duration changes
+        preloadInitialZoomLevel() // Preload zoom level 1x first
         invalidate()
     }
 
@@ -114,7 +114,7 @@ class VideoTimelineView @JvmOverloads constructor(
         videoUri = Uri.parse(path)
         thumbnailCache.clear()
         extractVideoInfo()
-        preloadAllZoomLevels() // Preload async
+        preloadInitialZoomLevel() // Preload zoom level 1x first
         invalidate()
     }
 
@@ -157,18 +157,29 @@ class VideoTimelineView @JvmOverloads constructor(
         }
     }
 
-    private fun preloadAllZoomLevels() {
+    private fun preloadInitialZoomLevel() {
         coroutineScope.launch {
-            for (level in zoomLevels.indices) {
+            // Load and display zoom level 0 (1x) first
+            if (!thumbnailCache.containsKey(0)) {
+                withContext(Dispatchers.IO) {
+                    generateThumbnailsForLevel(0)
+                }
+                // Switch to zoom level 0 immediately after generating
+                switchToZoomLevel(0)
+            }
+            // Then preload other zoom levels in the background
+            preloadRemainingZoomLevels()
+        }
+    }
+
+    private fun preloadRemainingZoomLevels() {
+        coroutineScope.launch {
+            for (level in 1 until zoomLevels.size) {
                 if (!thumbnailCache.containsKey(level)) {
                     withContext(Dispatchers.IO) {
                         generateThumbnailsForLevel(level)
                     }
                 }
-            }
-            // Sau khi preload, set level đầu tiên nếu chưa set
-            if (thumbnails.isEmpty()) {
-                switchToZoomLevel(0)
             }
         }
     }
@@ -181,7 +192,7 @@ class VideoTimelineView @JvmOverloads constructor(
 
         val frameInterval = frameIntervals[level]
         var totalFrames = (videoDuration / frameInterval).toInt()
-        totalFrames = minOf(totalFrames, 500) // Giới hạn để tránh OOM
+        totalFrames = minOf(totalFrames, 500) // Limit to avoid OOM
 
         Log.d("VideoTimelineView", "Generating thumbnails for level $level - Frames: $totalFrames")
 
@@ -295,9 +306,7 @@ class VideoTimelineView @JvmOverloads constructor(
         super.onDraw(canvas)
 
         canvas.save()
-        if (zoomAnimator?.isRunning == true) {
-            canvas.concat(currentScaleMatrix)
-        }
+        canvas.concat(currentScaleMatrix) // Apply scale matrix to entire timeline
 
         var x = -scrollX
         val topMargin = 20f
@@ -403,44 +412,84 @@ class VideoTimelineView @JvmOverloads constructor(
     }
 
     private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        private var accumulatedScaleFactor = 1f // Accumulate scale changes
+        private val zoomInThreshold = 1.3f // Zoom-in threshold
+        private val zoomOutThreshold = 0.7f // Zoom-out threshold
+        private val minPinchDistance = 50f // Minimum pinch distance (pixels)
+
+        override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+            accumulatedScaleFactor = 1f // Reset accumulation at gesture start
+            return true
+        }
+
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val scaleFactor = detector.scaleFactor
-            val newZoomLevel = if (scaleFactor > 1.03f && currentZoomLevel < zoomLevels.size - 1) {
-                currentZoomLevel + 1
-            } else if (scaleFactor < 0.97f && currentZoomLevel > 0) {
-                currentZoomLevel - 1
-            } else {
-                return false
+            accumulatedScaleFactor *= scaleFactor // Accumulate scale change
+
+            // Calculate pinch distance
+            val pinchDistance = abs(detector.currentSpan - detector.previousSpan)
+
+            // Only switch zoom level if accumulated scale is significant and pinch distance is sufficient
+            if (pinchDistance < minPinchDistance) {
+                return false // Ignore if pinch gesture is too small
             }
 
-            animateZoomTransition(newZoomLevel, scaleFactor > 1f)
+            val newZoomLevel = when {
+                accumulatedScaleFactor > zoomInThreshold && currentZoomLevel < zoomLevels.size - 1 -> {
+                    currentZoomLevel + 1
+                }
+                accumulatedScaleFactor < zoomOutThreshold && currentZoomLevel > 0 -> {
+                    currentZoomLevel - 1
+                }
+                else -> return false // No zoom level change
+            }
+
+            // Reset accumulation and start animation with focusX from pinch
+            accumulatedScaleFactor = 1f
+            animateZoomTransition(newZoomLevel, scaleFactor > 1f, detector.focusX)
             return true
+        }
+
+        override fun onScaleEnd(detector: ScaleGestureDetector) {
+            accumulatedScaleFactor = 1f // Reset at gesture end
         }
     }
 
-    private fun animateZoomTransition(newLevel: Int, isZoomIn: Boolean) {
+    private fun animateZoomTransition(newLevel: Int, isZoomIn: Boolean, pinchFocusX: Float) {
         zoomAnimator?.cancel()
 
         val startZoom = currentZoom
         val endZoom = zoomLevels[newLevel]
+        val startScrollX = scrollX
+
+        // Pivot point is the pinch position in the timeline (adjusted with scrollX)
+        val focusX = pinchFocusX + scrollX
 
         zoomAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 300
+            duration = 400
             interpolator = DecelerateInterpolator()
             addUpdateListener { animator ->
                 val progress = animator.animatedValue as Float
                 currentZoom = startZoom + (endZoom - startZoom) * progress
 
+                // Calculate scale and adjust matrix with pivot at focusX
                 val scale = currentZoom / startZoom
-                currentScaleMatrix.setScale(scale, 1f)
+                currentScaleMatrix.setScale(scale, 1f, focusX, 0f)
 
-                scrollX *= scale
+                // Adjust scrollX to expand outward from focusX, keeping playhead stable
+                scrollX = startScrollX * scale + focusX * (1f - scale)
+                scrollX = scrollX.coerceIn(minScrollX, maxScrollX)
 
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
+                override fun onAnimationEnd(animation: Animator) {
+                    // Switch thumbnails only after animation completes
                     switchToZoomLevel(newLevel)
+                    // Reset matrix and adjust scroll to maintain focus
+                    currentScaleMatrix.reset()
+                    scrollX = (focusX * (endZoom / startZoom) - pinchFocusX).coerceIn(minScrollX, maxScrollX)
+                    invalidate()
                 }
             })
             start()
@@ -455,9 +504,8 @@ class VideoTimelineView @JvmOverloads constructor(
             thumbnails = cached.first
             thumbnailPositions = cached.second
         } else {
-            generateThumbnails() // Async nếu chưa có
+            generateThumbnails() // Async if not cached
         }
-        currentScaleMatrix.reset()
         calculateMaxScroll()
         invalidate()
     }
