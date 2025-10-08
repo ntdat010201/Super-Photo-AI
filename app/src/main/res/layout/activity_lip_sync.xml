@@ -184,12 +184,28 @@
         android:paddingVertical="12dp">
 
         <!-- Video Timeline with Zoom -->
-        <com.example.superphoto.ui.views.VideoTimelineView
-            android:id="@+id/videoTimelineView"
-            android:layout_width="match_parent"
-            android:layout_height="80dp"
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:paddingVertical="8dp"
             android:layout_marginBottom="12dp"
-            android:background="@color/ai_surface" />
+            android:id="@+id/viewTimeline"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/timeline_background"
+            >
+
+            <!-- Video Timeline with Zoom -->
+            <com.example.superphoto.ui.views.VideoTimelineView
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                android:id="@+id/videoTimelineView"
+                android:layout_width="match_parent"
+                android:layout_height="75dp"
+                />
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+
 
 
         <!-- Add Speech Section -->
