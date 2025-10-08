@@ -69,11 +69,10 @@ class VideoTimelineView @JvmOverloads constructor(
     }
     private val playheadPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = ContextCompat.getColor(context, R.color.white)
-        strokeWidth = 4f
+        strokeWidth = 10f
+        style = Paint.Style.STROKE
     }
-
-    // Playhead position
-    private var playheadX = 0f
+    private var playheadX = 0f // Fixed position at center
 
     // Listener for position changes
     var onPositionChangeListener: ((Long) -> Unit)? = null
@@ -119,8 +118,7 @@ class VideoTimelineView @JvmOverloads constructor(
     fun setCurrentPosition(position: Long) {
         isSettingPositionExternally = true
         this.currentPosition = position
-        updatePlayheadPosition()
-        // Scroll timeline to center this position at the playhead
+        // Scroll timeline to center this position
         scrollToPosition(position)
         invalidate()
         isSettingPositionExternally = false
@@ -129,8 +127,7 @@ class VideoTimelineView @JvmOverloads constructor(
     fun setPlayheadPosition(position: Long) {
         isSettingPositionExternally = true
         this.currentPosition = position
-        updatePlayheadPosition()
-        // Scroll timeline to center this position at the playhead
+        // Scroll timeline to center this position
         scrollToPosition(position)
         invalidate()
         isSettingPositionExternally = false
@@ -232,50 +229,66 @@ class VideoTimelineView @JvmOverloads constructor(
         maxScrollX = max(0f, totalWidth - width)
     }
 
-    private fun updatePlayheadPosition() {
-        // Playhead is now fixed at the center of the screen
-        playheadX = width / 2f
-    }
+    // updatePlayheadPosition() removed - no more playhead logic
 
     private fun calculateCurrentPositionFromScroll() {
-        // Don't update position if we're setting it externally or if no thumbnails
-        if (isSettingPositionExternally || thumbnailPositions.isEmpty()) return
+        // Chỉ để trống - không cập nhật position nữa
+        // Chỉ cuộn mượt mà, PlayheadPaint đứng yên ở giữa
+    }
 
-        // Only update position if we're actively scrolling to avoid conflicts
-        if (!isScrolling) return
-
-        // Calculate which frame is at the center (playhead position)
-        val centerX = width / 2f + scrollX
-        val frameIndex = (centerX / (thumbnailWidth + thumbnailSpacing)).toInt()
-
-        if (frameIndex >= 0 && frameIndex < thumbnailPositions.size) {
-            val newPosition = thumbnailPositions[frameIndex]
-            // Only update if position actually changed to avoid unnecessary updates
-            if (newPosition != currentPosition) {
-                currentPosition = newPosition
+    private fun calculateCurrentPositionFromPlayhead(): Long {
+        if (thumbnailPositions.isEmpty()) return 0L
+        
+        // Calculate which frame is at the playhead position (center of screen)
+        val playheadPositionInTimeline = playheadX + scrollX
+        val frameWidth = thumbnailWidth + thumbnailSpacing
+        val exactFramePosition = playheadPositionInTimeline / frameWidth
+        
+        // Get the current frame index and interpolation factor
+        val currentFrameIndex = exactFramePosition.toInt()
+        val interpolationFactor = exactFramePosition - currentFrameIndex
+        
+        return if (currentFrameIndex >= 0 && currentFrameIndex < thumbnailPositions.size) {
+            // Calculate the exact time position based on interpolation
+            val currentFrameTime = thumbnailPositions[currentFrameIndex]
+            val nextFrameIndex = currentFrameIndex + 1
+            
+            if (nextFrameIndex < thumbnailPositions.size) {
+                val nextFrameTime = thumbnailPositions[nextFrameIndex]
+                val timeDifference = nextFrameTime - currentFrameTime
+                currentFrameTime + (timeDifference * interpolationFactor).toLong()
+            } else {
+                currentFrameTime
             }
+        } else {
+            0L
         }
     }
 
     private fun scrollToPosition(position: Long) {
-        // Find the frame index for this position
+        if (thumbnailPositions.isEmpty()) return
+        
+        // Find the closest frame to this position
         val frameIndex = thumbnailPositions.indexOfFirst { it >= position }
-        if (frameIndex >= 0) {
-            // Calculate the scroll position to center this frame at the playhead
-            val frameX = frameIndex * (thumbnailWidth + thumbnailSpacing)
-            val targetScrollX = (frameX - width / 2f).coerceIn(0f, maxScrollX)
-
-            // Only scroll if we're not already scrolling manually
-            if (!isScrolling) {
-                scrollX = targetScrollX
-            }
+            .takeIf { it != -1 } ?: (thumbnailPositions.size - 1)
+        
+        // Calculate scroll position to center this frame under the playhead
+        val frameWidth = thumbnailWidth + thumbnailSpacing
+        val targetScrollX = (frameIndex * frameWidth - width / 2f).coerceIn(0f, maxScrollX)
+        
+        // Only scroll if we're not already scrolling manually
+        if (!isScrolling) {
+            scrollX = targetScrollX
         }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         calculateMaxScroll()
-        updatePlayheadPosition()
+        // Set playhead at center of screen (fixed position)
+        playheadX = width / 2f
+        // Initialize scrollX so first frame aligns with playhead at center
+        scrollX = -(width / 2f)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -325,10 +338,14 @@ class VideoTimelineView @JvmOverloads constructor(
             x += thumbnailWidth + thumbnailSpacing
         }
 
-        // Draw playhead
-        if (playheadX >= 0 && playheadX <= width) {
-            canvas.drawLine(playheadX, 0f, playheadX, height.toFloat(), playheadPaint)
-        }
+        // Draw fixed playhead at center of screen
+        canvas.drawLine(
+            playheadX, 
+            topMargin, 
+            playheadX, 
+            topMargin + thumbnailHeight, 
+            playheadPaint
+        )
 
         // Draw zoom level indicator
         val zoomText = "${currentZoom.toInt()}x"
@@ -348,10 +365,8 @@ class VideoTimelineView @JvmOverloads constructor(
 
         when (event.action) {
             MotionEvent.ACTION_UP -> {
-                // Handle tap to seek
-                if (!scaleDetector.isInProgress) {
-                    handleTap(event.x)
-                }
+                // handleTap removed - no more auto snap on touch up
+                // This prevents the jerky snap back behavior when releasing finger
             }
         }
 
@@ -359,16 +374,38 @@ class VideoTimelineView @JvmOverloads constructor(
     }
 
     private fun handleTap(x: Float) {
-        // Calculate which frame was tapped and scroll to center it at playhead
+        if (thumbnailPositions.isEmpty()) return
+        
+        // Calculate exact position based on tap location with smooth interpolation
         val adjustedX = x + scrollX
-        val frameIndex = (adjustedX / (thumbnailWidth + thumbnailSpacing)).toInt()
-
-        if (frameIndex >= 0 && frameIndex < thumbnailPositions.size) {
-            // Calculate scroll position to center the tapped frame at playhead
-            val targetFrameX = frameIndex * (thumbnailWidth + thumbnailSpacing)
-            val targetScrollX = (targetFrameX - width / 2f).coerceIn(0f, maxScrollX)
-
-            // Animate scroll to center the tapped frame
+        val frameWidth = thumbnailWidth + thumbnailSpacing
+        val exactFramePosition = adjustedX / frameWidth
+        
+        // Get the current frame index and interpolation factor
+        val currentFrameIndex = exactFramePosition.toInt()
+        val interpolationFactor = exactFramePosition - currentFrameIndex
+        
+        if (currentFrameIndex >= 0 && currentFrameIndex < thumbnailPositions.size) {
+            // Calculate the exact time position based on interpolation
+            val currentFrameTime = thumbnailPositions[currentFrameIndex]
+            val nextFrameIndex = currentFrameIndex + 1
+            
+            val targetTime = if (nextFrameIndex < thumbnailPositions.size) {
+                val nextFrameTime = thumbnailPositions[nextFrameIndex]
+                val timeDifference = nextFrameTime - currentFrameTime
+                currentFrameTime + (timeDifference * interpolationFactor).toLong()
+            } else {
+                currentFrameTime
+            }
+            
+            // Update current position and notify listener
+            currentPosition = targetTime
+            onPositionChangeListener?.invoke(currentPosition)
+            
+            // Calculate scroll position to center the tapped position at playhead
+            val targetScrollX = (adjustedX - width / 2f).coerceIn(0f, maxScrollX)
+            
+            // Animate scroll to center the tapped position
             startSmoothScroll(targetScrollX - scrollX)
         }
     }
@@ -427,31 +464,16 @@ class VideoTimelineView @JvmOverloads constructor(
             scrollAnimator?.cancel()
             isScrolling = true
 
-            // Reduce scroll sensitivity for smoother experience (60% of original)
+            // Cuộn mượt mà
             val adjustedDistanceX = distanceX * 0.6f
             scrollX = (scrollX + adjustedDistanceX).coerceIn(0f, maxScrollX)
-            updatePlayheadPosition()
-
-            // Throttle expensive operations for smoother scrolling
-            val currentTime = System.currentTimeMillis()
-            if (currentTime - lastScrollTime >= scrollThrottleMs) {
-                calculateCurrentPositionFromScroll()
-                onPositionChangeListener?.invoke(currentPosition)
-                lastScrollTime = currentTime
-                pendingScrollUpdate = false
-            } else {
-                pendingScrollUpdate = true
-                // Schedule delayed update if needed
-                postDelayed({
-                    if (pendingScrollUpdate && !isScrolling) {
-                        calculateCurrentPositionFromScroll()
-                        onPositionChangeListener?.invoke(currentPosition)
-                        pendingScrollUpdate = false
-                    }
-                }, scrollThrottleMs)
-            }
-
-            // Use postInvalidateOnAnimation for smoother rendering
+            
+            // Tính toán và thông báo frame hiện tại tại vị trí playhead
+            val currentFramePosition = calculateCurrentPositionFromPlayhead()
+            currentPosition = currentFramePosition
+            onPositionChangeListener?.invoke(currentPosition)
+            
+            // Vẽ lại
             postInvalidateOnAnimation()
             return true
         }
@@ -462,18 +484,13 @@ class VideoTimelineView @JvmOverloads constructor(
             velocityX: Float,
             velocityY: Float
         ): Boolean {
-            // Handle fling gesture for smooth scrolling with animation
+            // Chỉ cuộn mượt với fling, không cập nhật position
             if (abs(velocityX) > 100) {
-                startSmoothScroll(-velocityX * 0.2f) // Reduce fling sensitivity
+                startSmoothScroll(-velocityX * 0.2f)
             }
 
-            // Reset scrolling state and handle pending updates
+            // Chỉ reset trạng thái scroll
             isScrolling = false
-            if (pendingScrollUpdate) {
-                calculateCurrentPositionFromScroll()
-                onPositionChangeListener?.invoke(currentPosition)
-                pendingScrollUpdate = false
-            }
             return true
         }
     }
@@ -491,10 +508,7 @@ class VideoTimelineView @JvmOverloads constructor(
             interpolator = DecelerateInterpolator()
             addUpdateListener { animator ->
                 scrollX = animator.animatedValue as Float
-                updatePlayheadPosition()
-                calculateCurrentPositionFromScroll()
-                onPositionChangeListener?.invoke(currentPosition)
-                // Use postInvalidateOnAnimation for smoother animation
+                // Chỉ vẽ lại, không cập nhật position
                 postInvalidateOnAnimation()
             }
             start()
