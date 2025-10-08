@@ -4,17 +4,28 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.AttributeSet
 import android.util.Log
-import android.view.*
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.View
 import android.view.animation.DecelerateInterpolator
 import androidx.core.content.ContextCompat
 import com.example.superphoto.R
-import kotlinx.coroutines.*
-import kotlin.math.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 class VideoTimelineView @JvmOverloads constructor(
     context: Context,
@@ -35,8 +46,8 @@ class VideoTimelineView @JvmOverloads constructor(
     private var currentPosition: Long = 0L
 
     // UI dimensions - Optimized for performance and quality
-    private val thumbnailWidth = 240f  // Balanced size for performance
-    private val thumbnailHeight = 160f  // Maintain 16:9 aspect ratio
+    private val thumbnailWidth = 200f  // Reduced for performance
+    private val thumbnailHeight = 112f  // Maintain 16:9 aspect ratio
     private val thumbnailSpacing = 10f  // Optimal spacing
     private var thumbnails = mutableListOf<Bitmap?>()
     private var thumbnailPositions = mutableListOf<Long>() // Time positions in milliseconds
@@ -66,6 +77,10 @@ class VideoTimelineView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = 2f
     }
+    private val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.LTGRAY // Gray placeholder
+        style = Paint.Style.FILL
+    }
     private val timePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = ContextCompat.getColor(context, R.color.ai_text_secondary)
         textSize = 40f
@@ -78,12 +93,20 @@ class VideoTimelineView @JvmOverloads constructor(
     }
     private var playheadX = 0f // Fixed position at center
 
+    // Placeholder rectangles
+    private var placeholderRects = mutableListOf<RectF>()
+
+    // Thumbnail loading control
+    private var lastLoadedFrameIndex = 0
+    private val initialFrameCount = 20 // Load 20 frames initially
+    private val additionalFrameCount = 10 // Load 10 more when scrolling
+
     // Listener for position changes
     var onPositionChangeListener: ((Long) -> Unit)? = null
 
-    // New variables for optimization
+    // Optimization variables
     private var isGeneratingThumbnails = false
-    private var currentScaleMatrix = Matrix() // Để scale thumbnails khi transition
+    private var currentScaleMatrix = Matrix() // For scaling thumbnails during transition
     private var zoomAnimator: ValueAnimator? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
 
@@ -125,7 +148,6 @@ class VideoTimelineView @JvmOverloads constructor(
     fun setCurrentPosition(position: Long) {
         isSettingPositionExternally = true
         this.currentPosition = position
-        // Scroll timeline to center this position
         scrollToPosition(position)
         invalidate()
         isSettingPositionExternally = false
@@ -134,7 +156,6 @@ class VideoTimelineView @JvmOverloads constructor(
     fun setPlayheadPosition(position: Long) {
         isSettingPositionExternally = true
         this.currentPosition = position
-        // Scroll timeline to center this position
         scrollToPosition(position)
         invalidate()
         isSettingPositionExternally = false
@@ -145,29 +166,44 @@ class VideoTimelineView @JvmOverloads constructor(
             try {
                 val retriever = MediaMetadataRetriever()
                 retriever.setDataSource(context, uri)
-
-                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                val duration =
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 videoDuration = duration?.toLongOrNull() ?: 0L
-
                 retriever.release()
             } catch (e: Exception) {
                 e.printStackTrace()
                 videoDuration = 30000L // Default 30 seconds if extraction fails
             }
         }
+        // Initialize placeholders based on video duration
+        initializePlaceholders()
+    }
+
+    private fun initializePlaceholders() {
+        placeholderRects.clear()
+        if (videoDuration <= 0) return
+
+        val frameInterval = frameIntervals[0] // Use zoom level 0 interval
+        val totalFrames = minOf((videoDuration / frameInterval).toInt(), initialFrameCount)
+        var x = -scrollX
+        val topMargin = 20f
+
+        for (i in 0 until totalFrames) {
+            val rect = RectF(x, topMargin, x + thumbnailWidth, topMargin + thumbnailHeight)
+            placeholderRects.add(rect)
+            x += thumbnailWidth + thumbnailSpacing
+        }
     }
 
     private fun preloadInitialZoomLevel() {
         coroutineScope.launch {
-            // Load and display zoom level 0 (1x) first
             if (!thumbnailCache.containsKey(0)) {
                 withContext(Dispatchers.IO) {
-                    generateThumbnailsForLevel(0)
+                    generateThumbnailsForLevel(0, initialFrameCount)
                 }
-                // Switch to zoom level 0 immediately after generating
                 switchToZoomLevel(0)
+                placeholderRects.clear() // Clear placeholders after thumbnails are loaded
             }
-            // Then preload other zoom levels in the background
             preloadRemainingZoomLevels()
         }
     }
@@ -177,22 +213,24 @@ class VideoTimelineView @JvmOverloads constructor(
             for (level in 1 until zoomLevels.size) {
                 if (!thumbnailCache.containsKey(level)) {
                     withContext(Dispatchers.IO) {
-                        generateThumbnailsForLevel(level)
+                        generateThumbnailsForLevel(level, initialFrameCount)
                     }
                 }
             }
         }
     }
 
-    private fun generateThumbnailsForLevel(level: Int): Pair<MutableList<Bitmap?>, MutableList<Long>> {
+    private fun generateThumbnailsForLevel(
+        level: Int,
+        frameCount: Int
+    ): Pair<MutableList<Bitmap?>, MutableList<Long>> {
         val thumbnailsList = mutableListOf<Bitmap?>()
         val positionsList = mutableListOf<Long>()
 
         if (videoDuration <= 0) return Pair(thumbnailsList, positionsList)
 
         val frameInterval = frameIntervals[level]
-        var totalFrames = (videoDuration / frameInterval).toInt()
-        totalFrames = minOf(totalFrames, 500) // Limit to avoid OOM
+        val totalFrames = minOf((videoDuration / frameInterval).toInt(), frameCount)
 
         Log.d("VideoTimelineView", "Generating thumbnails for level $level - Frames: $totalFrames")
 
@@ -205,7 +243,10 @@ class VideoTimelineView @JvmOverloads constructor(
                     val timeUs = (i * frameInterval * 1000)
                     if (timeUs <= videoDuration * 1000) {
                         try {
-                            val bitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                            val bitmap = retriever.getFrameAtTime(
+                                timeUs,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )
                             val scaledBitmap = bitmap?.let { scaleBitmap(it) }
                             thumbnailsList.add(scaledBitmap)
                             positionsList.add(i * frameInterval)
@@ -221,7 +262,77 @@ class VideoTimelineView @JvmOverloads constructor(
             }
         }
         thumbnailCache[level] = Pair(thumbnailsList, positionsList)
+        lastLoadedFrameIndex = totalFrames
         return thumbnailCache[level]!!
+    }
+
+    private fun loadMoreThumbnails() {
+        if (isGeneratingThumbnails) return
+        isGeneratingThumbnails = true
+
+        coroutineScope.launch {
+            val startIndex = lastLoadedFrameIndex
+            val data = withContext(Dispatchers.IO) {
+                generateAdditionalThumbnails(currentZoomLevel, startIndex, additionalFrameCount)
+            }
+            thumbnails.addAll(data.first)
+            thumbnailPositions.addAll(data.second)
+            calculateMaxScroll()
+            invalidate()
+            isGeneratingThumbnails = false
+        }
+    }
+
+    private fun generateAdditionalThumbnails(
+        level: Int,
+        startIndex: Int,
+        frameCount: Int
+    ): Pair<MutableList<Bitmap?>, MutableList<Long>> {
+        val thumbnailsList = mutableListOf<Bitmap?>()
+        val positionsList = mutableListOf<Long>()
+
+        if (videoDuration <= 0) return Pair(thumbnailsList, positionsList)
+
+        val frameInterval = frameIntervals[level]
+        val totalFrames = minOf((videoDuration / frameInterval).toInt() - startIndex, frameCount)
+
+        if (totalFrames <= 0) return Pair(thumbnailsList, positionsList)
+
+        Log.d(
+            "VideoTimelineView",
+            "Generating additional thumbnails for level $level - Frames: $totalFrames"
+        )
+
+        videoUri?.let { uri ->
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+
+                for (i in startIndex until startIndex + totalFrames) {
+                    val timeUs = (i * frameInterval * 1000)
+                    if (timeUs <= videoDuration * 1000) {
+                        try {
+                            val bitmap = retriever.getFrameAtTime(
+                                timeUs,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )
+                            val scaledBitmap = bitmap?.let { scaleBitmap(it) }
+                            thumbnailsList.add(scaledBitmap)
+                            positionsList.add(i * frameInterval)
+                        } catch (e: Exception) {
+                            thumbnailsList.add(null)
+                            positionsList.add(i * frameInterval)
+                        }
+                    }
+                }
+                retriever.release()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        lastLoadedFrameIndex += totalFrames
+        thumbnailCache[level] = Pair(thumbnails, thumbnailPositions)
+        return Pair(thumbnailsList, positionsList)
     }
 
     private fun scaleBitmap(originalBitmap: Bitmap): Bitmap {
@@ -230,7 +341,12 @@ class VideoTimelineView @JvmOverloads constructor(
         val targetWidth = thumbnailWidth.toInt()
         val targetHeight = thumbnailHeight.toInt()
         val scale = minOf(targetWidth / originalWidth, targetHeight / originalHeight)
-        return Bitmap.createScaledBitmap(originalBitmap, (originalWidth * scale).toInt(), (originalHeight * scale).toInt(), true)
+        return Bitmap.createScaledBitmap(
+            originalBitmap,
+            (originalWidth * scale).toInt(),
+            (originalHeight * scale).toInt(),
+            true
+        )
     }
 
     private fun generateThumbnails() {
@@ -239,11 +355,12 @@ class VideoTimelineView @JvmOverloads constructor(
 
         coroutineScope.launch {
             val data = withContext(Dispatchers.IO) {
-                generateThumbnailsForLevel(currentZoomLevel)
+                generateThumbnailsForLevel(currentZoomLevel, initialFrameCount)
             }
             thumbnails = data.first
             thumbnailPositions = data.second
             calculateMaxScroll()
+            placeholderRects.clear() // Clear placeholders after thumbnails are loaded
             invalidate()
             isGeneratingThumbnails = false
         }
@@ -300,16 +417,27 @@ class VideoTimelineView @JvmOverloads constructor(
         calculateMaxScroll()
         playheadX = width / 2f
         scrollX = -(width / 2f)
+        initializePlaceholders() // Reinitialize placeholders on size change
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
         canvas.save()
-        canvas.concat(currentScaleMatrix) // Apply scale matrix to entire timeline
+        canvas.concat(currentScaleMatrix)
 
         var x = -scrollX
         val topMargin = 20f
+
+        // Draw placeholders if thumbnails are not yet loaded
+        if (thumbnails.isEmpty()) {
+            for (rect in placeholderRects) {
+                canvas.drawRect(rect, placeholderPaint)
+                canvas.drawRect(rect, borderPaint)
+            }
+        }
+
+        // Draw thumbnails
         for (i in thumbnails.indices) {
             val thumbnail = thumbnails[i]
             val rect = RectF(x, topMargin, x + thumbnailWidth, topMargin + thumbnailHeight)
@@ -329,8 +457,13 @@ class VideoTimelineView @JvmOverloads constructor(
 
                 canvas.drawBitmap(thumbnail, null, drawRect, thumbnailPaint)
             } else {
-                canvas.drawRect(rect, borderPaint)
-                canvas.drawText("...", x + thumbnailWidth / 2, topMargin + thumbnailHeight / 2, timePaint)
+                canvas.drawRect(rect, placeholderPaint)
+                canvas.drawText(
+                    "...",
+                    x + thumbnailWidth / 2,
+                    topMargin + thumbnailHeight / 2,
+                    timePaint
+                )
             }
 
             canvas.drawRect(rect, borderPaint)
@@ -358,6 +491,11 @@ class VideoTimelineView @JvmOverloads constructor(
         // Draw zoom level indicator
         val zoomText = "${currentZoom.toInt()}x"
         canvas.drawText(zoomText, width - 50f, 30f, timePaint)
+
+        // Check if more thumbnails need to be loaded
+        if (thumbnails.isNotEmpty() && scrollX > maxScrollX - width * 2) {
+            loadMoreThumbnails()
+        }
     }
 
     private fun formatTime(milliseconds: Long, index: Int): String {
@@ -412,46 +550,45 @@ class VideoTimelineView @JvmOverloads constructor(
     }
 
     private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-        private var accumulatedScaleFactor = 1f // Accumulate scale changes
-        private val zoomInThreshold = 1.3f // Zoom-in threshold
-        private val zoomOutThreshold = 0.7f // Zoom-out threshold
-        private val minPinchDistance = 50f // Minimum pinch distance (pixels)
+        private var accumulatedScaleFactor = 1f
+        private val zoomInThreshold = 1.3f
+        private val zoomOutThreshold = 0.7f
+        private val minPinchDistance = 50f
 
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
-            accumulatedScaleFactor = 1f // Reset accumulation at gesture start
+            accumulatedScaleFactor = 1f
             return true
         }
 
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val scaleFactor = detector.scaleFactor
-            accumulatedScaleFactor *= scaleFactor // Accumulate scale change
+            accumulatedScaleFactor *= scaleFactor
 
-            // Calculate pinch distance
             val pinchDistance = abs(detector.currentSpan - detector.previousSpan)
 
-            // Only switch zoom level if accumulated scale is significant and pinch distance is sufficient
             if (pinchDistance < minPinchDistance) {
-                return false // Ignore if pinch gesture is too small
+                return false
             }
 
             val newZoomLevel = when {
                 accumulatedScaleFactor > zoomInThreshold && currentZoomLevel < zoomLevels.size - 1 -> {
                     currentZoomLevel + 1
                 }
+
                 accumulatedScaleFactor < zoomOutThreshold && currentZoomLevel > 0 -> {
                     currentZoomLevel - 1
                 }
-                else -> return false // No zoom level change
+
+                else -> return false
             }
 
-            // Reset accumulation and start animation with focusX from pinch
             accumulatedScaleFactor = 1f
             animateZoomTransition(newZoomLevel, scaleFactor > 1f, detector.focusX)
             return true
         }
 
         override fun onScaleEnd(detector: ScaleGestureDetector) {
-            accumulatedScaleFactor = 1f // Reset at gesture end
+            accumulatedScaleFactor = 1f
         }
     }
 
@@ -462,21 +599,18 @@ class VideoTimelineView @JvmOverloads constructor(
         val endZoom = zoomLevels[newLevel]
         val startScrollX = scrollX
 
-        // Pivot point is the pinch position in the timeline (adjusted with scrollX)
         val focusX = pinchFocusX + scrollX
 
         zoomAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 400
+            duration = 500
             interpolator = DecelerateInterpolator()
             addUpdateListener { animator ->
                 val progress = animator.animatedValue as Float
                 currentZoom = startZoom + (endZoom - startZoom) * progress
 
-                // Calculate scale and adjust matrix with pivot at focusX
                 val scale = currentZoom / startZoom
                 currentScaleMatrix.setScale(scale, 1f, focusX, 0f)
 
-                // Adjust scrollX to expand outward from focusX, keeping playhead stable
                 scrollX = startScrollX * scale + focusX * (1f - scale)
                 scrollX = scrollX.coerceIn(minScrollX, maxScrollX)
 
@@ -484,11 +618,12 @@ class VideoTimelineView @JvmOverloads constructor(
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    // Switch thumbnails only after animation completes
                     switchToZoomLevel(newLevel)
-                    // Reset matrix and adjust scroll to maintain focus
                     currentScaleMatrix.reset()
-                    scrollX = (focusX * (endZoom / startZoom) - pinchFocusX).coerceIn(minScrollX, maxScrollX)
+                    scrollX = (focusX * (endZoom / startZoom) - pinchFocusX).coerceIn(
+                        minScrollX,
+                        maxScrollX
+                    )
                     invalidate()
                 }
             })
@@ -504,9 +639,10 @@ class VideoTimelineView @JvmOverloads constructor(
             thumbnails = cached.first
             thumbnailPositions = cached.second
         } else {
-            generateThumbnails() // Async if not cached
+            generateThumbnails()
         }
         calculateMaxScroll()
+        initializePlaceholders() // Reinitialize placeholders for new zoom level
         invalidate()
     }
 
