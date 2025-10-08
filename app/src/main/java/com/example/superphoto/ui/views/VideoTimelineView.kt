@@ -43,6 +43,7 @@ class VideoTimelineView @JvmOverloads constructor(
 
     // Scroll and gesture handling with smooth animation
     private var scrollX = 0f
+    private var minScrollX = 0f
     private var maxScrollX = 0f
     private var scaleDetector: ScaleGestureDetector
     private var gestureDetector: GestureDetector
@@ -226,7 +227,11 @@ class VideoTimelineView @JvmOverloads constructor(
 
     private fun calculateMaxScroll() {
         val totalWidth = thumbnails.size * (thumbnailWidth + thumbnailSpacing)
-        maxScrollX = max(0f, totalWidth - width)
+        // Professional video editor scroll bounds:
+        // - Left max: first frame start aligns with playhead (center)
+        // - Right max: last frame end aligns with playhead (center)
+        minScrollX = -(width / 2f)
+        maxScrollX = totalWidth - (width / 2f)
     }
 
     // updatePlayheadPosition() removed - no more playhead logic
@@ -274,7 +279,7 @@ class VideoTimelineView @JvmOverloads constructor(
         
         // Calculate scroll position to center this frame under the playhead
         val frameWidth = thumbnailWidth + thumbnailSpacing
-        val targetScrollX = (frameIndex * frameWidth - width / 2f).coerceIn(0f, maxScrollX)
+        val targetScrollX = (frameIndex * frameWidth - width / 2f).coerceIn(minScrollX, maxScrollX)
         
         // Only scroll if we're not already scrolling manually
         if (!isScrolling) {
@@ -403,7 +408,7 @@ class VideoTimelineView @JvmOverloads constructor(
             onPositionChangeListener?.invoke(currentPosition)
             
             // Calculate scroll position to center the tapped position at playhead
-            val targetScrollX = (adjustedX - width / 2f).coerceIn(0f, maxScrollX)
+            val targetScrollX = (adjustedX - width / 2f).coerceIn(minScrollX, maxScrollX)
             
             // Animate scroll to center the tapped position
             startSmoothScroll(targetScrollX - scrollX)
@@ -464,9 +469,9 @@ class VideoTimelineView @JvmOverloads constructor(
             scrollAnimator?.cancel()
             isScrolling = true
 
-            // Cuộn mượt mà
+            // Cuộn mượt mà với bounds như editor video chuyên nghiệp
             val adjustedDistanceX = distanceX * 0.6f
-            scrollX = (scrollX + adjustedDistanceX).coerceIn(0f, maxScrollX)
+            scrollX = (scrollX + adjustedDistanceX).coerceIn(minScrollX, maxScrollX)
             
             // Tính toán và thông báo frame hiện tại tại vị trí playhead
             val currentFramePosition = calculateCurrentPositionFromPlayhead()
@@ -499,7 +504,7 @@ class VideoTimelineView @JvmOverloads constructor(
         scrollAnimator?.cancel()
 
         val startScrollX = scrollX
-        val targetScrollX = (scrollX + distance).coerceIn(0f, maxScrollX)
+        val targetScrollX = (scrollX + distance).coerceIn(minScrollX, maxScrollX)
 
         if (abs(targetScrollX - startScrollX) < 1f) return
 
