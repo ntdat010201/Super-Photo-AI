@@ -41,6 +41,9 @@
             android:name=".ui.activities.EditVideoActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.activities.LipSyncActivity"
+            android:exported="false" />
+        <activity
             android:name=".splash.OnBoardingActivity"
             android:exported="true">
             <intent-filter>

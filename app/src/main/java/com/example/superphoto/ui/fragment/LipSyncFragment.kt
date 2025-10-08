@@ -229,33 +229,14 @@ class LipSyncFragment : Fragment() {
         val enhanceQuality = enhanceQualityCheckbox.isChecked
         val preserveExpression = preserveExpressionCheckbox.isChecked
         
-        isGenerating = true
-        updateGenerateButtonState()
-        
-        Toast.makeText(
-            requireContext(),
-            "Starting lip sync generation...",
-            Toast.LENGTH_SHORT
-        ).show()
-
-        lifecycleScope.launch {
-            try {
-                // Lip sync generation not supported with Remini API
-                isGenerating = false
-                updateGenerateButtonState()
-                Toast.makeText(requireContext(), 
-                    "Lip sync generation is not supported with current API configuration.", 
-                    Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                isGenerating = false
-                updateGenerateButtonState()
-                Toast.makeText(
-                    requireContext(),
-                    "Error: ${e.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+        // Navigate to LipSyncActivity with selected files
+        val intent = Intent(requireContext(), com.example.superphoto.ui.activities.LipSyncActivity::class.java).apply {
+            putExtra("video_uri", selectedVideoUri.toString())
+            putExtra("audio_uri", selectedAudioUri.toString())
+            putExtra("enhance_quality", enhanceQuality)
+            putExtra("preserve_expression", preserveExpression)
         }
+        startActivity(intent)
     }
 
     private fun getFileName(uri: Uri): String? {
