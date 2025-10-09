@@ -805,4 +805,8 @@ class VideoTimelineView @JvmOverloads constructor(
             start()
         }
     }
+
+    // Getter methods for trim range
+    fun getTrimStartMs(): Long = trimStartMs
+    fun getTrimEndMs(): Long = trimEndMs
 }

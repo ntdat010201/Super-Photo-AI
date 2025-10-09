@@ -2,10 +2,16 @@ package com.example.superphoto.ui.activities
 
 import android.content.Intent
 import android.media.MediaPlayer
+import android.media.MediaMetadataRetriever
+import android.media.MediaMuxer
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.media.MediaCodec
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
@@ -15,6 +21,12 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.example.superphoto.R
 import com.example.superphoto.ui.views.VideoTimelineView
+import java.io.File
+import java.nio.ByteBuffer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class LipSyncActivity : AppCompatActivity() {
 
@@ -35,6 +47,7 @@ class LipSyncActivity : AppCompatActivity() {
     private lateinit var characterName: TextView
     private lateinit var videoTimelineView: VideoTimelineView
     private lateinit var trimButton: Button
+    private lateinit var okCutButton: Button
 
     // State variables
     private var videoUri: Uri? = null
@@ -107,6 +120,7 @@ class LipSyncActivity : AppCompatActivity() {
         characterName = findViewById(R.id.characterName)
         videoTimelineView = findViewById(R.id.videoTimelineView)
         trimButton = findViewById(R.id.trimButton)
+        okCutButton = findViewById(R.id.okCut)
     }
 
     private fun setupClickListeners() {
@@ -146,6 +160,10 @@ class LipSyncActivity : AppCompatActivity() {
 
         trimButton.setOnClickListener {
             toggleTrimMode()
+        }
+
+        okCutButton.setOnClickListener {
+            cutVideo()
         }
     }
 
@@ -286,8 +304,174 @@ class LipSyncActivity : AppCompatActivity() {
             // Tắt trim mode
             videoTimelineView.enableTrimMode(false)
             trimButton.text = "Trim Video"
-            trimButton.setBackgroundColor(getColor(R.color.ai_text_primary)) // Màu mặc định
+            trimButton.setBackgroundColor(getColor(R.color.ai_accent)) // Màu mặc định
             Toast.makeText(this, "Đã thoát chế độ Trim", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun cutVideo() {
+        if (!isTrimModeActive) {
+            Toast.makeText(this, "Vui lòng bật chế độ Trim trước khi cắt video", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val startMs = videoTimelineView.getTrimStartMs()
+        val endMs = videoTimelineView.getTrimEndMs()
+        
+        if (startMs >= endMs) {
+            Toast.makeText(this, "Vùng cắt không hợp lệ", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        Toast.makeText(this, "Đang cắt video...", Toast.LENGTH_SHORT).show()
+        
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val success = trimVideoSegment(videoUri, startMs, endMs)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        Toast.makeText(this@LipSyncActivity, "Cắt video thành công!", Toast.LENGTH_LONG).show()
+                        // Tắt trim mode sau khi cắt thành công
+                        isTrimModeActive = false
+                        videoTimelineView.enableTrimMode(false)
+                        trimButton.text = "Trim Video"
+                        trimButton.setBackgroundColor(getColor(R.color.ai_text_primary))
+                    } else {
+                        Toast.makeText(this@LipSyncActivity, "Lỗi khi cắt video", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@LipSyncActivity, "Lỗi: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private suspend fun trimVideoSegment(videoUri: Uri?, startMs: Long, endMs: Long): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (videoUri == null) return@withContext false
+
+                val inputPath = getRealPathFromURI(videoUri) ?: return@withContext false
+                val outputDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "SuperPhoto")
+                if (!outputDir.exists()) {
+                    outputDir.mkdirs()
+                }
+                
+                val outputFile = File(outputDir, "trimmed_video_${System.currentTimeMillis()}.mp4")
+                
+                val extractor = MediaExtractor()
+                extractor.setDataSource(inputPath)
+                
+                val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                
+                var videoTrackIndex = -1
+                var audioTrackIndex = -1
+                var muxerVideoTrackIndex = -1
+                var muxerAudioTrackIndex = -1
+                
+                // Tìm video và audio tracks
+                for (i in 0 until extractor.trackCount) {
+                    val format = extractor.getTrackFormat(i)
+                    val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+                    
+                    when {
+                        mime.startsWith("video/") -> {
+                            videoTrackIndex = i
+                            muxerVideoTrackIndex = muxer.addTrack(format)
+                        }
+                        mime.startsWith("audio/") -> {
+                            audioTrackIndex = i
+                            muxerAudioTrackIndex = muxer.addTrack(format)
+                        }
+                    }
+                }
+                
+                muxer.start()
+                
+                // Xử lý video track
+                if (videoTrackIndex >= 0) {
+                    processTrack(extractor, muxer, videoTrackIndex, muxerVideoTrackIndex, startMs * 1000, endMs * 1000)
+                }
+                
+                // Xử lý audio track
+                if (audioTrackIndex >= 0) {
+                    processTrack(extractor, muxer, audioTrackIndex, muxerAudioTrackIndex, startMs * 1000, endMs * 1000)
+                }
+                
+                muxer.stop()
+                muxer.release()
+                extractor.release()
+                
+                true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    private fun processTrack(
+        extractor: MediaExtractor,
+        muxer: MediaMuxer,
+        extractorTrackIndex: Int,
+        muxerTrackIndex: Int,
+        startTimeUs: Long,
+        endTimeUs: Long
+    ) {
+        extractor.selectTrack(extractorTrackIndex)
+        extractor.seekTo(startTimeUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+
+        val buffer = ByteBuffer.allocate(1024 * 1024) // 1MB buffer
+        val bufferInfo = MediaCodec.BufferInfo()
+
+        while (true) {
+            val sampleSize = extractor.readSampleData(buffer, 0)
+            if (sampleSize < 0) break
+
+            val sampleTime = extractor.sampleTime
+            if (sampleTime > endTimeUs) break
+
+            if (sampleTime >= startTimeUs) {
+                bufferInfo.offset = 0
+                bufferInfo.size = sampleSize
+                bufferInfo.presentationTimeUs = sampleTime - startTimeUs
+
+                bufferInfo.flags = try {
+                    extractor.getSampleFlags()
+                } catch (e: NoSuchMethodError) {
+                    // Nếu thiết bị Android quá cũ không hỗ trợ getSampleFlags()
+                    0
+                }
+
+                muxer.writeSampleData(muxerTrackIndex, buffer, bufferInfo)
+            }
+
+            extractor.advance()
+        }
+
+        extractor.unselectTrack(extractorTrackIndex)
+    }
+
+
+    private fun getRealPathFromURI(uri: Uri): String? {
+        return try {
+            val cursor = contentResolver.query(uri, null, null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val columnIndex = it.getColumnIndex(android.provider.MediaStore.Video.Media.DATA)
+                    if (columnIndex >= 0) {
+                        it.getString(columnIndex)
+                    } else {
+                        uri.path
+                    }
+                } else {
+                    uri.path
+                }
+            }
+        } catch (e: Exception) {
+            uri.path
         }
     }
 

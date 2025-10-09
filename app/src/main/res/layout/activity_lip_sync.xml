@@ -205,12 +205,26 @@
                 />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
+        <LinearLayout
+            android:orientation="horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
 
-        <Button
-            android:id="@+id/trimButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Trim Video" />
+            <Button
+                android:id="@+id/trimButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Trim Video" />
+
+            <Button
+                android:layout_marginStart="6dp"
+                android:id="@+id/okCut"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cut" />
+        </LinearLayout>
+
+
 
         <!-- Add Speech Section -->
         <LinearLayout
