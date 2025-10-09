@@ -110,6 +110,24 @@ class VideoTimelineView @JvmOverloads constructor(
     private var zoomAnimator: ValueAnimator? = null
     private val coroutineScope = CoroutineScope(Dispatchers.Main)
 
+    // Trim mode
+    private var isTrimMode = false  // Bật/tắt trim mode
+    private var trimStartMs: Long = 0L  // Vị trí bắt đầu trim (ms)
+    private var trimEndMs: Long = 0L  // Vị trí kết thúc trim (ms, mặc định toàn bộ video)
+
+    // Drag state
+    private var draggingHandle: HandleType? = null  // Đang drag handle nào?
+    private enum class HandleType { START, END }
+    private val handleWidth = 20f  // Chiều rộng handle (để detect touch)
+    private val handlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.red)  // Màu handle, ví dụ đỏ
+        strokeWidth = 8f
+        style = Paint.Style.STROKE
+    }
+
+    // Listener cho trim change
+    var onTrimChangeListener: ((Long, Long) -> Unit)? = null
+
     init {
         scaleDetector = ScaleGestureDetector(context, ScaleListener())
         gestureDetector = GestureDetector(context, GestureListener())
@@ -129,6 +147,7 @@ class VideoTimelineView @JvmOverloads constructor(
 
     fun setVideoDuration(duration: Long) {
         this.videoDuration = duration
+        this.trimEndMs = duration
         preloadInitialZoomLevel() // Preload zoom level 1x first
         invalidate()
     }
@@ -169,6 +188,7 @@ class VideoTimelineView @JvmOverloads constructor(
                 val duration =
                     retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 videoDuration = duration?.toLongOrNull() ?: 0L
+                trimEndMs = videoDuration
                 retriever.release()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -496,6 +516,28 @@ class VideoTimelineView @JvmOverloads constructor(
         if (thumbnails.isNotEmpty() && scrollX > maxScrollX - width * 2) {
             loadMoreThumbnails()
         }
+
+        if (isTrimMode) {
+            canvas.save()
+            canvas.concat(currentScaleMatrix)
+
+            // Tính vị trí X của handles
+            val pixelsPerMs = (thumbnailWidth + thumbnailSpacing) / frameIntervals[currentZoomLevel]
+            val startX = -scrollX + (trimStartMs * pixelsPerMs)
+            val endX = -scrollX + (trimEndMs * pixelsPerMs)
+
+            // Vẽ handle start (left)
+            canvas.drawLine(startX, topMargin - 20f, startX, topMargin + thumbnailHeight + 20f, handlePaint)
+
+            // Vẽ handle end (right)
+            canvas.drawLine(endX, topMargin - 20f, endX, topMargin + thumbnailHeight + 20f, handlePaint)
+
+            // Optional: Vẽ overlay mờ giữa start và end để highlight đoạn chọn
+            val overlayPaint = Paint().apply { color = Color.argb(50, 0, 255, 0); style = Paint.Style.FILL }  // Xanh mờ
+            canvas.drawRect(startX, topMargin, endX, topMargin + thumbnailHeight, overlayPaint)
+
+            canvas.restore()
+        }
     }
 
     private fun formatTime(milliseconds: Long, index: Int): String {
@@ -506,16 +548,50 @@ class VideoTimelineView @JvmOverloads constructor(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        var handled = scaleDetector.onTouchEvent(event)
-        handled = gestureDetector.onTouchEvent(event) || handled
-
-        when (event.action) {
-            MotionEvent.ACTION_UP -> {
-                // No snap on up
-            }
+        if (!isTrimMode) {
+            // Giữ nguyên code cũ nếu không ở trim mode
+            var handled = scaleDetector.onTouchEvent(event)
+            handled = gestureDetector.onTouchEvent(event) || handled
+            return handled || super.onTouchEvent(event)
         }
 
-        return handled || super.onTouchEvent(event)
+        // Trim mode: Xử lý drag handles
+        val pixelsPerMs = (thumbnailWidth + thumbnailSpacing) / frameIntervals[currentZoomLevel]
+        val startX = -scrollX + (trimStartMs * pixelsPerMs)
+        val endX = -scrollX + (trimEndMs * pixelsPerMs)
+
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                val touchX = event.x
+                if (abs(touchX - startX) < handleWidth) {
+                    draggingHandle = HandleType.START
+                } else if (abs(touchX - endX) < handleWidth) {
+                    draggingHandle = HandleType.END
+                } else {
+                    // Optional: Nếu click ngoài handle, handle tap như cũ
+                    handleTap(event.x)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (draggingHandle != null) {
+                    val newX = event.x + scrollX  // Tính vị trí thực trên timeline
+                    var newMs = (newX / pixelsPerMs).toLong().coerceIn(0L, videoDuration)
+
+                    if (draggingHandle == HandleType.START) {
+                        trimStartMs = newMs.coerceAtMost(trimEndMs - 1000L)  // Ít nhất 1s cách end
+                    } else {
+                        trimEndMs = newMs.coerceAtLeast(trimStartMs + 1000L)  // Ít nhất 1s cách start
+                    }
+
+                    invalidate()
+                    onTrimChangeListener?.invoke(trimStartMs, trimEndMs)
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                draggingHandle = null
+            }
+        }
+        return true  // Consume event
     }
 
     private fun handleTap(x: Float) {
@@ -547,6 +623,15 @@ class VideoTimelineView @JvmOverloads constructor(
 
             startSmoothScroll(targetScrollX - scrollX)
         }
+    }
+
+    fun enableTrimMode(enable: Boolean) {
+        isTrimMode = enable
+        if (enable) {
+            trimStartMs = 0L
+            trimEndMs = videoDuration
+        }
+        invalidate()
     }
 
     private inner class ScaleListener : ScaleGestureDetector.SimpleOnScaleGestureListener() {
@@ -643,6 +728,7 @@ class VideoTimelineView @JvmOverloads constructor(
         }
         calculateMaxScroll()
         initializePlaceholders() // Reinitialize placeholders for new zoom level
+        if (isTrimMode) enableTrimMode(true)
         invalidate()
     }
 

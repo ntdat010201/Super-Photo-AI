@@ -34,6 +34,7 @@ class LipSyncActivity : AppCompatActivity() {
     private lateinit var characterAvatar: ImageView
     private lateinit var characterName: TextView
     private lateinit var videoTimelineView: VideoTimelineView
+    private lateinit var trimButton: Button
 
     // State variables
     private var videoUri: Uri? = null
@@ -50,7 +51,7 @@ class LipSyncActivity : AppCompatActivity() {
 
     // Handler for updating timeline
     private val handler = Handler(Looper.getMainLooper())
-    private val updateTimelineRunnable = object : Runnable {
+    private var updateTimelineRunnable: Runnable = object : Runnable {
         override fun run() {
             if (isPlaying && videoView.isPlaying) {
                 currentPosition = videoView.currentPosition
@@ -104,6 +105,7 @@ class LipSyncActivity : AppCompatActivity() {
         characterAvatar = findViewById(R.id.characterAvatar)
         characterName = findViewById(R.id.characterName)
         videoTimelineView = findViewById(R.id.videoTimelineView)
+        trimButton = findViewById(R.id.trimButton)
     }
 
     private fun setupClickListeners() {
@@ -140,6 +142,10 @@ class LipSyncActivity : AppCompatActivity() {
         videoView.setOnClickListener {
             togglePlayPause()
         }
+
+        trimButton.setOnClickListener {
+            videoTimelineView.enableTrimMode(true)  // Bật trim mode
+        }
     }
 
     private fun setupVideo() {
@@ -159,6 +165,33 @@ class LipSyncActivity : AppCompatActivity() {
                     videoView.seekTo(position.toInt())
                     currentPosition = position.toInt()
                     updateTimeDisplay()
+                }
+
+                // Set listener cho trim change
+                videoTimelineView.onTrimChangeListener = { startMs, endMs ->
+                    // Seek video đến start
+                    videoView.seekTo(startMs.toInt())
+
+                    // Optional: Loop playback giữa start và end
+                    handler.removeCallbacks(updateTimelineRunnable)  // Stop old runnable
+                    updateTimelineRunnable = object : Runnable {
+                        override fun run() {
+                            if (isPlaying && videoView.isPlaying) {
+                                currentPosition = videoView.currentPosition
+                                if (currentPosition >= endMs.toInt()) {
+                                    videoView.seekTo(startMs.toInt())  // Reset to start
+                                }
+                                timelineSeekBar.progress = currentPosition
+                                updateTimeDisplay()
+                                handler.postDelayed(this, 100)
+                            }
+                        }
+                    }
+
+                    // Cập nhật seekbar max thành end - start
+                    timelineSeekBar.max = (endMs - startMs).toInt()
+
+                    Toast.makeText(this, "Trim: $startMs to $endMs ms", Toast.LENGTH_SHORT).show()
                 }
 
                 // Show first frame immediately
@@ -286,17 +319,17 @@ class LipSyncActivity : AppCompatActivity() {
         // Seek to the beginning and pause to show first frame
         videoView.seekTo(0)
         currentPosition = 0
-        
+
         // Start the video briefly to load the first frame, then pause immediately
         videoView.start()
-        
+
         // Pause after a very short delay to ensure first frame is displayed
         handler.postDelayed({
             if (videoView.isPlaying && !isPlaying) {
                 videoView.pause()
             }
         }, 50) // 50ms delay to ensure frame is loaded
-        
+
         updateTimeDisplay()
     }
 
