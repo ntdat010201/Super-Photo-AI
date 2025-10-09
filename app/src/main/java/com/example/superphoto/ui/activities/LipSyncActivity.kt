@@ -160,6 +160,9 @@ class LipSyncActivity : AppCompatActivity() {
                     currentPosition = position.toInt()
                     updateTimeDisplay()
                 }
+
+                // Show first frame immediately
+                showFirstFrame()
             }
 
             videoView.setOnCompletionListener {
@@ -277,6 +280,24 @@ class LipSyncActivity : AppCompatActivity() {
         // Update character info
         characterName.text = "Character 1"
         characterAvatar.setImageResource(R.drawable.ic_character_avatar)
+    }
+
+    private fun showFirstFrame() {
+        // Seek to the beginning and pause to show first frame
+        videoView.seekTo(0)
+        currentPosition = 0
+        
+        // Start the video briefly to load the first frame, then pause immediately
+        videoView.start()
+        
+        // Pause after a very short delay to ensure first frame is displayed
+        handler.postDelayed({
+            if (videoView.isPlaying && !isPlaying) {
+                videoView.pause()
+            }
+        }, 50) // 50ms delay to ensure frame is loaded
+        
+        updateTimeDisplay()
     }
 
     private fun applyLipSync() {
