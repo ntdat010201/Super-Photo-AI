@@ -30,35 +30,84 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/characterRecyclerView"
         android:layout_width="match_parent"
-        android:layout_height="120dp"
+        android:layout_height="40dp"
         android:layout_marginBottom="16dp"
         android:orientation="horizontal"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
 
-    <!-- Speech Input -->
+    <!-- Speech Input Options -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Speech Text"
+        android:text="Add Speech"
         android:textColor="@color/ai_text_primary"
         android:textSize="16sp"
         android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
+        android:layout_marginBottom="12dp" />
 
-    <EditText
-        android:id="@+id/speechEditText"
+    <!-- Audio File Selection -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="100dp"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
         android:background="@drawable/speech_input_background"
         android:padding="12dp"
-        android:hint="Enter speech text here..."
-        android:textColorHint="@color/ai_text_hint"
-        android:textColor="@color/ai_text_primary"
+        android:layout_marginBottom="16dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_audio_file"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="12dp"
+            app:tint="@color/ai_text_secondary" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/selectedAudioText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="No audio file selected"
+                android:textColor="@color/ai_text_secondary"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/audioDurationText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/ai_text_hint"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/selectAudioButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="Browse"
+            android:textColor="@color/ai_text_primary"
+            android:textSize="12sp"
+            android:background="@drawable/dialog_cancel_button"
+            android:paddingHorizontal="12dp"
+            android:minWidth="0dp" />
+
+    </LinearLayout>
+
+    <!-- Text Input Alternative -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Or enter text to convert to speech"
+        android:textColor="@color/ai_text_secondary"
         android:textSize="14sp"
-        android:gravity="top|start"
-        android:inputType="textMultiLine"
-        android:maxLines="4"
-        android:layout_marginBottom="24dp" />
+        android:layout_marginBottom="8dp" />
 
     <!-- Action Buttons -->
     <LinearLayout
@@ -91,5 +140,10 @@
             android:minWidth="0dp" />
 
     </LinearLayout>
+
+    <View
+        android:layout_marginTop="12dp"
+        android:layout_width="match_parent"
+        android:layout_height="16dp"/>
 
 </LinearLayout>

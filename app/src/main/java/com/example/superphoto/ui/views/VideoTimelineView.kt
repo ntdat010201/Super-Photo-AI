@@ -21,6 +21,7 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import androidx.core.content.ContextCompat
 import com.example.superphoto.R
+import com.example.superphoto.models.AudioTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,8 +47,8 @@ class VideoTimelineView @JvmOverloads constructor(
     private var currentPosition: Long = 0L
 
     // UI dimensions - Optimized for performance and quality
-    private val thumbnailWidth = 200f  // Reduced for performance
-    private val thumbnailHeight = 112f  // Maintain 16:9 aspect ratio
+    private val thumbnailWidth = 140f  // Reduced for performance
+    private val thumbnailHeight = 140f  // Maintain 16:9 aspect ratio
     private val thumbnailSpacing = 10f  // Optimal spacing
     private var thumbnails = mutableListOf<Bitmap?>()
     private var thumbnailPositions = mutableListOf<Long>() // Time positions in milliseconds
@@ -127,6 +128,25 @@ class VideoTimelineView @JvmOverloads constructor(
 
     // Listener cho trim change
     var onTrimChangeListener: ((Long, Long) -> Unit)? = null
+
+    // Audio tracks management
+    private val audioTracks = mutableListOf<AudioTrack>()
+    private val audioTrackHeight = 40f
+    private val audioTrackSpacing = 8f
+    private val audioTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.ai_accent)
+        style = Paint.Style.FILL
+    }
+    private val audioTrackBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.ai_border)
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    private val audioTrackTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = ContextCompat.getColor(context, R.color.white)
+        textSize = 24f
+        textAlign = Paint.Align.LEFT
+    }
 
     init {
         scaleDetector = ScaleGestureDetector(context, ScaleListener())
@@ -506,6 +526,9 @@ class VideoTimelineView @JvmOverloads constructor(
             playheadPaint
         )
 
+        // Draw audio tracks
+        drawAudioTracks(canvas, topMargin + thumbnailHeight + 80f)
+
         canvas.restore()
 
         // Draw zoom level indicator
@@ -809,4 +832,84 @@ class VideoTimelineView @JvmOverloads constructor(
     // Getter methods for trim range
     fun getTrimStartMs(): Long = trimStartMs
     fun getTrimEndMs(): Long = trimEndMs
+
+    // Get current playhead position in milliseconds
+    fun getPlayheadPosition(): Long {
+        return calculateCurrentPositionFromPlayhead()
+    }
+
+    // Add audio track to timeline
+    fun addAudioTrack(audioTrack: AudioTrack) {
+        audioTracks.add(audioTrack)
+        invalidate()
+    }
+
+    // Remove audio track from timeline
+    fun removeAudioTrack(audioTrackId: String) {
+        audioTracks.removeAll { it.id == audioTrackId }
+        invalidate()
+    }
+
+    // Get all audio tracks
+    fun getAudioTracks(): List<AudioTrack> = audioTracks.toList()
+
+    // Clear all audio tracks
+    fun clearAudioTracks() {
+        audioTracks.clear()
+        invalidate()
+    }
+
+    private fun drawAudioTracks(canvas: Canvas, startY: Float) {
+        if (audioTracks.isEmpty()) return
+
+        val pixelsPerMs = (thumbnailWidth + thumbnailSpacing) / frameIntervals[currentZoomLevel]
+        
+        audioTracks.forEachIndexed { index, audioTrack ->
+            val trackY = startY + (index * (audioTrackHeight + audioTrackSpacing))
+            
+            // Calculate audio track position and width
+            val startX = -scrollX + (audioTrack.startPosition * pixelsPerMs)
+            val endX = -scrollX + (audioTrack.endPosition * pixelsPerMs)
+            val trackWidth = endX - startX
+            
+            // Only draw if the track is visible on screen
+            if (endX > 0 && startX < width) {
+                // Draw audio track background
+                val trackRect = RectF(startX, trackY, endX, trackY + audioTrackHeight)
+                canvas.drawRect(trackRect, audioTrackPaint)
+                canvas.drawRect(trackRect, audioTrackBorderPaint)
+                
+                // Draw audio track name (truncated if necessary)
+                val textY = trackY + audioTrackHeight / 2 + audioTrackTextPaint.textSize / 3
+                val maxTextWidth = trackWidth - 16f // 8px padding on each side
+                
+                if (maxTextWidth > 0) {
+                    val displayName = audioTrack.getDisplayName()
+                    val truncatedText = if (audioTrackTextPaint.measureText(displayName) > maxTextWidth) {
+                        var truncated = displayName
+                        while (audioTrackTextPaint.measureText("$truncated...") > maxTextWidth && truncated.length > 1) {
+                            truncated = truncated.dropLast(1)
+                        }
+                        "$truncated..."
+                    } else {
+                        displayName
+                    }
+                    
+                    canvas.drawText(truncatedText, startX + 8f, textY, audioTrackTextPaint)
+                }
+                
+                // Draw duration indicator at the end
+                val durationText = audioTrack.getFormattedDuration()
+                val durationTextWidth = audioTrackTextPaint.measureText(durationText)
+                if (durationTextWidth < trackWidth - 16f) {
+                    canvas.drawText(
+                        durationText, 
+                        endX - durationTextWidth - 8f,
+                        textY, 
+                        audioTrackTextPaint
+                    )
+                }
+            }
+        }
+    }
 }

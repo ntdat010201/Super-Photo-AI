@@ -19,10 +19,14 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResultLauncher
 import com.example.superphoto.R
 import com.example.superphoto.ui.views.VideoTimelineView
+import com.example.superphoto.models.AudioTrack
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,9 +63,17 @@ class LipSyncActivity : AppCompatActivity() {
     private var videoDuration = 0
     private var currentPosition = 0
     private var isTrimModeActive = false // Trạng thái trim mode
-
-    // Media player for audio playback
+    private var lastPlayheadPosition: Long = 0L
+    private var isVideoInitialized = false
+    // MediaPlayer for audio playback
     private var mediaPlayer: MediaPlayer? = null
+    
+    // Audio track management
+    private val audioTracks = mutableListOf<AudioTrack>()
+    private var selectedAudioUri: Uri? = null
+    
+    // File picker for audio selection
+    private lateinit var audioPickerLauncher: ActivityResultLauncher<Intent>
 
     // Handler for updating timeline
     private val handler = Handler(Looper.getMainLooper())
@@ -79,6 +91,9 @@ class LipSyncActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_lip_sync)
+
+        // Initialize audio file picker
+        initializeAudioPicker()
 
         // Get data from intent
         getIntentData()
@@ -101,6 +116,17 @@ class LipSyncActivity : AppCompatActivity() {
         audioUri = intent.getStringExtra("audio_uri")?.let { Uri.parse(it) }
         enhanceQuality = intent.getBooleanExtra("enhance_quality", false)
         preserveExpression = intent.getBooleanExtra("preserve_expression", false)
+    }
+
+    private fun initializeAudioPicker() {
+        audioPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                result.data?.data?.let { uri ->
+                    selectedAudioUri = uri
+                    processSelectedAudio(uri)
+                }
+            }
+        }
     }
 
     private fun initViews() {
@@ -209,12 +235,14 @@ class LipSyncActivity : AppCompatActivity() {
 
                     // Cập nhật seekbar max thành end - start
                     timelineSeekBar.max = (endMs - startMs).toInt()
-
                     Toast.makeText(this, "Trim: $startMs to $endMs ms", Toast.LENGTH_SHORT).show()
                 }
 
-                // Show first frame immediately
-                showFirstFrame()
+                // Chỉ gọi showFirstFrame nếu video chưa được khởi tạo
+                if (!isVideoInitialized) {
+                    showFirstFrame()
+                    isVideoInitialized = true
+                }
             }
 
             videoView.setOnCompletionListener {
@@ -281,7 +309,9 @@ class LipSyncActivity : AppCompatActivity() {
         timeDisplay.text = formatTime(currentPosition)
 
         // Update playhead position in timeline view
-        videoTimelineView.setPlayheadPosition(currentPosition.toLong())
+        if (videoTimelineView.getPlayheadPosition() != currentPosition.toLong()) {
+            videoTimelineView.setPlayheadPosition(currentPosition.toLong())
+        }
     }
 
     private fun formatTime(milliseconds: Int): String {
@@ -476,6 +506,8 @@ class LipSyncActivity : AppCompatActivity() {
     }
 
     private fun showAddSpeechDialog() {
+        // Lưu vị trí playhead trước khi mở dialog
+        lastPlayheadPosition = videoTimelineView.getPlayheadPosition()
         // Create dialog for character selection and speech input
         val dialogView = layoutInflater.inflate(R.layout.dialog_add_speech, null)
 
@@ -484,37 +516,160 @@ class LipSyncActivity : AppCompatActivity() {
             .create()
 
         val characterRecyclerView = dialogView.findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.characterRecyclerView)
-        val speechEditText = dialogView.findViewById<EditText>(R.id.speechEditText)
+        val selectedAudioText = dialogView.findViewById<TextView>(R.id.selectedAudioText)
+        val audioDurationText = dialogView.findViewById<TextView>(R.id.audioDurationText)
+        val selectAudioButton = dialogView.findViewById<Button>(R.id.selectAudioButton)
         val cancelButton = dialogView.findViewById<Button>(R.id.cancelButton)
         val addButton = dialogView.findViewById<Button>(R.id.addButton)
 
+        // Reset selected audio for new dialog
+        selectedAudioUri = null
+        selectedAudioText.text = "No audio file selected"
+        audioDurationText.visibility = View.GONE
+
         // Setup character selection (you can implement RecyclerView adapter here)
 
-        cancelButton.setOnClickListener {
-            dialog.dismiss()
+        selectAudioButton.setOnClickListener {
+            openAudioFilePicker()
         }
 
         addButton.setOnClickListener {
-            val speechText = speechEditText.text.toString()
-            if (speechText.isNotEmpty()) {
-                addSpeechToTimeline(speechText)
-                dialog.dismiss()
-            } else {
-                Toast.makeText(this, "Please enter speech text", Toast.LENGTH_SHORT).show()
+            when {
+                selectedAudioUri != null -> {
+                    addAudioToTimeline(selectedAudioUri!!)
+                    dialog.dismiss()
+                }
+                else -> {
+                    Toast.makeText(this, "Please select an audio file or enter speech text", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
+        cancelButton.setOnClickListener {
+            videoTimelineView.setPlayheadPosition(lastPlayheadPosition)
+            dialog.dismiss()
+        }
+
+        // Store dialog reference for updating UI
+        currentSpeechDialog = dialog
+        currentDialogViews = DialogViews(selectedAudioText, audioDurationText)
         dialog.show()
     }
 
+    // Helper class to store dialog views
+    private data class DialogViews(
+        val selectedAudioText: TextView,
+        val audioDurationText: TextView
+    )
+
+    private var currentSpeechDialog: androidx.appcompat.app.AlertDialog? = null
+    private var currentDialogViews: DialogViews? = null
+
+    private fun openAudioFilePicker() {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "audio/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        audioPickerLauncher.launch(Intent.createChooser(intent, "Select Audio File"))
+    }
+
+    private fun processSelectedAudio(uri: Uri) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val audioInfo = getAudioInfo(uri)
+                withContext(Dispatchers.Main) {
+                    updateDialogWithAudioInfo(audioInfo)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@LipSyncActivity, "Error processing audio file: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun getAudioInfo(uri: Uri): AudioInfo {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: "Unknown"
+            val displayName = getFileNameFromUri(uri) ?: title
+            
+            AudioInfo(displayName, duration)
+        } finally {
+            retriever.release()
+        }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        return contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && nameIndex >= 0) {
+                cursor.getString(nameIndex)
+            } else null
+        }
+    }
+
+    private fun updateDialogWithAudioInfo(audioInfo: AudioInfo) {
+        currentDialogViews?.let { views ->
+            views.selectedAudioText.text = audioInfo.fileName
+            views.audioDurationText.text = "Duration: ${formatTime(audioInfo.duration.toInt())}"
+            views.audioDurationText.visibility = View.VISIBLE
+        }
+    }
+
+    private fun addAudioToTimeline(audioUri: Uri) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val audioInfo = getAudioInfo(audioUri)
+                val audioTrack = AudioTrack(
+                    id = UUID.randomUUID().toString(),
+                    uri = audioUri,
+                    filePath = getRealPathFromURI(audioUri) ?: "",
+                    fileName = audioInfo.fileName,
+                    duration = audioInfo.duration,
+                    startPosition = lastPlayheadPosition, // Sử dụng vị trí playhead đã lưu
+                    endPosition = lastPlayheadPosition + audioInfo.duration
+                )
+
+                withContext(Dispatchers.Main) {
+                    audioTracks.add(audioTrack)
+                    videoTimelineView.addAudioTrack(audioTrack)
+
+                    // Khôi phục vị trí playhead
+                    videoTimelineView.setPlayheadPosition(lastPlayheadPosition)
+                    videoView.seekTo(lastPlayheadPosition.toInt())
+                    currentPosition = lastPlayheadPosition.toInt()
+                    updateTimeDisplay()
+
+                    Toast.makeText(this@LipSyncActivity, "Audio added to timeline: ${audioInfo.fileName}", Toast.LENGTH_SHORT).show()
+
+                    characterName.text = "Audio Track"
+                    characterAvatar.setImageResource(R.drawable.ic_audio_file)
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@LipSyncActivity, "Error adding audio to timeline: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private fun addSpeechToTimeline(speechText: String) {
-        // Add speech marker to timeline at current position
+        // Add speech marker to timeline at current position (future TTS implementation)
         Toast.makeText(this, "Speech added: $speechText", Toast.LENGTH_SHORT).show()
 
         // Update character info
         characterName.text = "Character 1"
         characterAvatar.setImageResource(R.drawable.ic_character_avatar)
     }
+
+    // Data class for audio information
+    private data class AudioInfo(
+        val fileName: String,
+        val duration: Long
+    )
 
     private fun showFirstFrame() {
         // Seek to the beginning and pause to show first frame
