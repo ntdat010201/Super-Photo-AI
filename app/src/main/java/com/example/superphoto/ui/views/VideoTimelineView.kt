@@ -555,22 +555,24 @@ class VideoTimelineView @JvmOverloads constructor(
             return handled || super.onTouchEvent(event)
         }
 
-        // Trim mode: Xử lý drag handles
+        // Trim mode: Xử lý drag handles và cho phép scrolling
         val pixelsPerMs = (thumbnailWidth + thumbnailSpacing) / frameIntervals[currentZoomLevel]
         val startX = -scrollX + (trimStartMs * pixelsPerMs)
         val endX = -scrollX + (trimEndMs * pixelsPerMs)
+
+        var trimHandled = false
 
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 val touchX = event.x
                 if (abs(touchX - startX) < handleWidth) {
                     draggingHandle = HandleType.START
+                    trimHandled = true
                 } else if (abs(touchX - endX) < handleWidth) {
                     draggingHandle = HandleType.END
-                } else {
-                    // Optional: Nếu click ngoài handle, handle tap như cũ
-                    handleTap(event.x)
+                    trimHandled = true
                 }
+                // Không gọi handleTap trong trim mode để tránh click-to-seek
             }
             MotionEvent.ACTION_MOVE -> {
                 if (draggingHandle != null) {
@@ -585,17 +587,34 @@ class VideoTimelineView @JvmOverloads constructor(
 
                     invalidate()
                     onTrimChangeListener?.invoke(trimStartMs, trimEndMs)
+                    trimHandled = true
                 }
             }
             MotionEvent.ACTION_UP -> {
-                draggingHandle = null
+                if (draggingHandle != null) {
+                    draggingHandle = null
+                    trimHandled = true
+                }
             }
         }
-        return true  // Consume event
+
+        // Nếu không phải drag handle, cho phép gesture detector xử lý scrolling
+        if (!trimHandled) {
+            var handled = scaleDetector.onTouchEvent(event)
+            handled = gestureDetector.onTouchEvent(event) || handled
+            return handled || super.onTouchEvent(event)
+        }
+
+        return true  // Consume event nếu đã xử lý trim handle
     }
 
     private fun handleTap(x: Float) {
         if (thumbnailPositions.isEmpty()) return
+        
+        // Nếu đang ở trim mode, không cho phép click để seek
+        if (isTrimMode) {
+            return
+        }
 
         val adjustedX = x + scrollX
         val frameWidth = thumbnailWidth + thumbnailSpacing

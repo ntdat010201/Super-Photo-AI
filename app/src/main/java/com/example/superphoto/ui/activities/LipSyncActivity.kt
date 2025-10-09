@@ -45,8 +45,9 @@ class LipSyncActivity : AppCompatActivity() {
     private var isFullscreen = false
     private var videoDuration = 0
     private var currentPosition = 0
+    private var isTrimModeActive = false // Trạng thái trim mode
 
-    // Media player for audio
+    // Media player for audio playback
     private var mediaPlayer: MediaPlayer? = null
 
     // Handler for updating timeline
@@ -144,7 +145,7 @@ class LipSyncActivity : AppCompatActivity() {
         }
 
         trimButton.setOnClickListener {
-            videoTimelineView.enableTrimMode(true)  // Bật trim mode
+            toggleTrimMode()
         }
     }
 
@@ -272,7 +273,23 @@ class LipSyncActivity : AppCompatActivity() {
         return String.format("%02d:%02d", minutes, remainingSeconds)
     }
 
-
+    private fun toggleTrimMode() {
+        isTrimModeActive = !isTrimModeActive
+        
+        if (isTrimModeActive) {
+            // Bật trim mode
+            videoTimelineView.enableTrimMode(true)
+            trimButton.text = "Thoát Trim"
+            trimButton.setBackgroundColor(getColor(R.color.red)) // Đổi màu để hiển thị trạng thái active
+            Toast.makeText(this, "Chế độ Trim: Chỉ cuộn timeline, không click để seek", Toast.LENGTH_SHORT).show()
+        } else {
+            // Tắt trim mode
+            videoTimelineView.enableTrimMode(false)
+            trimButton.text = "Trim Video"
+            trimButton.setBackgroundColor(getColor(R.color.ai_text_primary)) // Màu mặc định
+            Toast.makeText(this, "Đã thoát chế độ Trim", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private fun showAddSpeechDialog() {
         // Create dialog for character selection and speech input
