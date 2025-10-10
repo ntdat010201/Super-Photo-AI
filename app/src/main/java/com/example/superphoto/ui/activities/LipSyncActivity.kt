@@ -67,11 +67,11 @@ class LipSyncActivity : AppCompatActivity() {
     private var isVideoInitialized = false
     // MediaPlayer for audio playback
     private var mediaPlayer: MediaPlayer? = null
-    
+
     // Audio track management
     private val audioTracks = mutableListOf<AudioTrack>()
     private var selectedAudioUri: Uri? = null
-    
+
     // File picker for audio selection
     private lateinit var audioPickerLauncher: ActivityResultLauncher<Intent>
 
@@ -323,7 +323,7 @@ class LipSyncActivity : AppCompatActivity() {
 
     private fun toggleTrimMode() {
         isTrimModeActive = !isTrimModeActive
-        
+
         if (isTrimModeActive) {
             // Bật trim mode
             videoTimelineView.enableTrimMode(true)
@@ -347,14 +347,14 @@ class LipSyncActivity : AppCompatActivity() {
 
         val startMs = videoTimelineView.getTrimStartMs()
         val endMs = videoTimelineView.getTrimEndMs()
-        
+
         if (startMs >= endMs) {
             Toast.makeText(this, "Vùng cắt không hợp lệ", Toast.LENGTH_SHORT).show()
             return
         }
 
         Toast.makeText(this, "Đang cắt video...", Toast.LENGTH_SHORT).show()
-        
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val success = trimVideoSegment(videoUri, startMs, endMs)
@@ -365,7 +365,7 @@ class LipSyncActivity : AppCompatActivity() {
                         isTrimModeActive = false
                         videoTimelineView.enableTrimMode(false)
                         trimButton.text = "Trim Video"
-                        trimButton.setBackgroundColor(getColor(R.color.ai_text_primary))
+                        trimButton.setBackgroundColor(getColor(R.color.ai_accent))
                     } else {
                         Toast.makeText(this@LipSyncActivity, "Lỗi khi cắt video", Toast.LENGTH_LONG).show()
                     }
@@ -388,24 +388,24 @@ class LipSyncActivity : AppCompatActivity() {
                 if (!outputDir.exists()) {
                     outputDir.mkdirs()
                 }
-                
+
                 val outputFile = File(outputDir, "trimmed_video_${System.currentTimeMillis()}.mp4")
-                
+
                 val extractor = MediaExtractor()
                 extractor.setDataSource(inputPath)
-                
+
                 val muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-                
+
                 var videoTrackIndex = -1
                 var audioTrackIndex = -1
                 var muxerVideoTrackIndex = -1
                 var muxerAudioTrackIndex = -1
-                
+
                 // Tìm video và audio tracks
                 for (i in 0 until extractor.trackCount) {
                     val format = extractor.getTrackFormat(i)
                     val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
-                    
+
                     when {
                         mime.startsWith("video/") -> {
                             videoTrackIndex = i
@@ -417,23 +417,23 @@ class LipSyncActivity : AppCompatActivity() {
                         }
                     }
                 }
-                
+
                 muxer.start()
-                
+
                 // Xử lý video track
                 if (videoTrackIndex >= 0) {
                     processTrack(extractor, muxer, videoTrackIndex, muxerVideoTrackIndex, startMs * 1000, endMs * 1000)
                 }
-                
+
                 // Xử lý audio track
                 if (audioTrackIndex >= 0) {
                     processTrack(extractor, muxer, audioTrackIndex, muxerAudioTrackIndex, startMs * 1000, endMs * 1000)
                 }
-                
+
                 muxer.stop()
                 muxer.release()
                 extractor.release()
-                
+
                 true
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -595,7 +595,7 @@ class LipSyncActivity : AppCompatActivity() {
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: "Unknown"
             val displayName = getFileNameFromUri(uri) ?: title
-            
+
             AudioInfo(displayName, duration)
         } finally {
             retriever.release()

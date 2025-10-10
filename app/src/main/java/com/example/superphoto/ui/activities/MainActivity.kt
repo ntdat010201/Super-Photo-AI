@@ -23,11 +23,11 @@ import com.example.superphoto.ui.fragment.SearchFragment
 import com.example.superphoto.ui.fragment.TemplatesFragment
 import com.example.superphoto.ui.fragment.ToolsFragment
 
-
 class MainActivity : BaseActivity() {
     private lateinit var binding: ActivityMainBinding
     private var currentFragmentIndex = 0
-    private var previousFragmentIndex = 0 // Track previous fragment before SearchFragment
+    private var previousFragmentIndex = 0
+
     private val bottomNavItems by lazy {
         listOf(
             binding.homeContainer,
@@ -38,14 +38,19 @@ class MainActivity : BaseActivity() {
         )
     }
 
-    // Permission launcher
-    private val storagePermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            Toast.makeText(this, "Quyền lưu trữ đã được cấp", Toast.LENGTH_SHORT).show()
+    // Permission launcher for multiple permissions
+    private val multiplePermissionsLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.entries.all { it.value }
+        if (allGranted) {
+            Toast.makeText(this, "Tất cả quyền đã được cấp", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Cần quyền lưu trữ để lưu ảnh/video", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Cần cấp đầy đủ quyền để truy cập ảnh, video và âm thanh",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -55,19 +60,17 @@ class MainActivity : BaseActivity() {
         enableEdgeToEdge()
         setContentView(binding.root)
 
-        // Request storage permission
-        requestStoragePermission()
+        // Request permissions
+        requestMediaPermissions()
 
         setupBottomNavigation()
         setupClickListeners()
 
-        // Load default fragment (Home)
         if (savedInstanceState == null) {
-            loadFragment(HomeFragment.Companion.newInstance(), 0)
-            updateBottomNavSelection(0) // Highlight home icon and text on startup
+            loadFragment(HomeFragment.newInstance(), 0)
+            updateBottomNavSelection(0)
         }
-        
-        // Listen for back stack changes để hiện lại header
+
         supportFragmentManager.addOnBackStackChangedListener {
             val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
             if (currentFragment !is SearchFragment) {
@@ -77,41 +80,27 @@ class MainActivity : BaseActivity() {
     }
 
     private fun setupClickListeners() {
-        // Setup settings button
         binding.settingsIcon.setOnClickListener {
             val intent = Intent(this, SettingActivity::class.java)
             startActivity(intent)
         }
-        
-        // Setup search EditText focus and click - navigate to SearchFragment
+
         binding.searchEditText.setOnFocusChangeListener { _, hasFocus ->
-            if (hasFocus) {
-                openSearchFragment()
-            }
+            if (hasFocus) openSearchFragment()
         }
-        
+
         binding.searchEditText.setOnClickListener {
             openSearchFragment()
         }
     }
-    
+
     private fun openSearchFragment() {
         val searchText = binding.searchEditText.text.toString()
         val searchFragment = SearchFragment.newInstance(searchText)
-        
-        // Save current fragment index before switching to SearchFragment
         previousFragmentIndex = currentFragmentIndex
-        
-        // Use the same navigation system as other fragments
-        loadFragment(searchFragment, 5) // Index 5 for SearchFragment
-        
-        // Hide header when opening SearchFragment
+        loadFragment(searchFragment, 5)
         binding.headerLayout.visibility = android.view.View.GONE
-        
-        // Clear focus from searchEditText
         binding.searchEditText.clearFocus()
-        
-        // Reset bottom navigation selection (no tab selected for search)
         updateBottomNavSelection(-1)
     }
 
@@ -123,24 +112,22 @@ class MainActivity : BaseActivity() {
         binding.assetsContainer.setOnClickListener { selectBottomNavItem(4) }
     }
 
-
     private fun selectBottomNavItem(index: Int) {
         if (currentFragmentIndex == index) return
 
         val fragment = when (index) {
-            0 -> HomeFragment.Companion.newInstance()
-            1 -> TemplatesFragment.Companion.newInstance()
-            2 -> CreateFragment.Companion.newInstance()
-            3 -> ToolsFragment.Companion.newInstance()
-            4 -> AssetsFragment.Companion.newInstance()
-            5 -> SearchFragment.newInstance("") // SearchFragment with empty search
-            else -> HomeFragment.Companion.newInstance()
+            0 -> HomeFragment.newInstance()
+            1 -> TemplatesFragment.newInstance()
+            2 -> CreateFragment.newInstance()
+            3 -> ToolsFragment.newInstance()
+            4 -> AssetsFragment.newInstance()
+            5 -> SearchFragment.newInstance("")
+            else -> HomeFragment.newInstance()
         }
 
         loadFragment(fragment, index)
         updateBottomNavSelection(index)
-        
-        // Show header for all fragments except SearchFragment
+
         if (index == 5) {
             binding.headerLayout.visibility = android.view.View.GONE
         } else {
@@ -173,7 +160,6 @@ class MainActivity : BaseActivity() {
         )
 
         iconIds.forEachIndexed { index, imageView ->
-            // Skip createContainer (index 2) - keep its original color
             if (index != 2) {
                 imageView.imageTintList = ColorStateList.valueOf(
                     if (index == selectedIndex) getColor(R.color.bottom_nav_selected) else getColor(R.color.bottom_nav_unselected)
@@ -182,7 +168,6 @@ class MainActivity : BaseActivity() {
         }
 
         labelIds.forEachIndexed { index, textView ->
-            // Skip createContainer (index 2) - keep its original color
             if (index != 2) {
                 textView.setTextColor(
                     if (index == selectedIndex) getColor(R.color.bottom_nav_selected) else getColor(R.color.bottom_nav_unselected)
@@ -191,52 +176,68 @@ class MainActivity : BaseActivity() {
         }
     }
 
-
-    // Public method for SearchFragment to return to previous fragment
     fun returnFromSearch() {
-        // Return to the previous fragment that was active before SearchFragment
         selectBottomNavItem(previousFragmentIndex)
     }
 
-    fun requestStoragePermission() {
-        // For Android 13+ (API 33), we need different permissions
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ doesn't need WRITE_EXTERNAL_STORAGE for MediaStore
-            return // No permission needed for MediaStore on Android 13+
-        } else {
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
+    fun requestMediaPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+            permissionsToRequest.addAll(
+                listOf(
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VIDEO,
+                    Manifest.permission.READ_MEDIA_AUDIO
+                )
+            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            }
+        } else { // Android 6 - 12
+            permissionsToRequest.addAll(
+                listOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            )
         }
 
-        when {
-            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED -> {
-                // Permission already granted
-                return
+        // Add CAMERA permission if needed
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.CAMERA)
+        }
+
+        // Check if any permission is not granted
+        val permissionsNeeded = permissionsToRequest.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+
+        if (permissionsNeeded.isNotEmpty()) {
+            // Show rationale if needed
+            permissionsNeeded.forEach { permission ->
+                if (shouldShowRequestPermissionRationale(permission)) {
+                    Toast.makeText(
+                        this,
+                        "Ứng dụng cần quyền để truy cập ảnh, video, âm thanh hoặc camera",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
             }
-            shouldShowRequestPermissionRationale(permission) -> {
-                // Show explanation to user
-                Toast.makeText(
-                    this,
-                    "Ứng dụng cần quyền lưu trữ để lưu ảnh và video vào thiết bị",
-                    Toast.LENGTH_LONG
-                ).show()
-                storagePermissionLauncher.launch(permission)
-            }
-            else -> {
-                // Request permission directly
-                storagePermissionLauncher.launch(permission)
-            }
+            multiplePermissionsLauncher.launch(permissionsNeeded.toTypedArray())
         }
     }
 
-    // Public method to check if storage permission is granted
-    fun hasStoragePermission(): Boolean {
+    fun hasMediaPermissions(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            true // No permission needed for MediaStore on Android 13+
+            // Android 13+: Check granular media permissions
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
         } else {
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE
-            ) == PackageManager.PERMISSION_GRANTED
+            // Android 6-12: Check storage permissions
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     }
 }
